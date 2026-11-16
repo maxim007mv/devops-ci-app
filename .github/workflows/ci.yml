@@ -3,6 +3,7 @@ name: CI — verify and publish image
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -114,8 +115,16 @@ jobs:
           docker tag "devops-ci-app:${GITHUB_SHA}" "${IMAGE_NAME}:${GITHUB_SHA}"
           docker tag "devops-ci-app:${GITHUB_SHA}" "${IMAGE_NAME}:latest"
 
+      - name: Tag release image
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Git tag ${GITHUB_REF_NAME} -> Docker tag ${VERSION} (commit ${GITHUB_SHA})"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          docker tag "devops-ci-app:${GITHUB_SHA}" "${IMAGE_NAME}:${VERSION}"
+
       - name: Log in to GHCR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s\n' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
@@ -125,3 +134,7 @@ jobs:
         run: |
           docker push "${IMAGE_NAME}:${GITHUB_SHA}"
           docker push "${IMAGE_NAME}:latest"
+
+      - name: Push release image
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: docker push "${IMAGE_NAME}:${VERSION}"
